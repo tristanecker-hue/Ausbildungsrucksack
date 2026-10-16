@@ -1,3 +1,17 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Feuerwehrmann</title>
+<meta name="theme-color" content="#0D1A1F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Feuerwehrmann">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>html{-webkit-text-size-adjust:100%}body{margin:0}</style>
+</head><body>
 <title>Interview mit Claude</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=DM+Mono:wght@400;500&display=swap">
@@ -82,11 +96,11 @@ body.face{padding-block:12px 16px}
 body.face header,body.face #menuPanel,body.face #startPanel,body.face #result,body.face #answerPanel,body.face #asked{display:none}
 body.face main{min-height:calc(100dvh - 28px);justify-content:space-between;gap:10px}
 body.face .stage{flex:1;justify-content:center;gap:6px}
-body.face .stage svg{width:min(80vw,40dvh);max-width:520px}
-body.face .bubble{background:transparent;border:0;min-height:5.2em;text-align:center;font-size:1.2rem;padding:6px 4px}
+body.face .stage svg{height:clamp(260px,calc(100dvh - 362px),640px);width:auto;max-width:100%;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+body.face .bubble{background:transparent;border:0;min-height:4.4em;text-align:center;font-size:1.1rem;padding:4px}
 body.face .bubble::before{display:none}
 body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:10px}
-.mic{width:84px;height:84px;border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;font-size:2rem;line-height:1}
+.mic{width:72px;height:72px;border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;font-size:2rem;line-height:1}
 .mic svg{width:34px;height:34px}
 .mic.on{background:var(--danger);border-color:var(--danger);color:#fff;animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{box-shadow:0 0 0 12px rgba(163,44,44,.18)}}
@@ -221,7 +235,7 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
 
   <section id="settingsPanel" aria-label="Einstellungen">
     <h2 class="set-h">Fragen und Antworten</h2>
-    <p class="note">Jedes Thema hat eine Beispielfrage, Stichwörter und eine Antwort. Schreib die Antwort so, wie der Bot sie sagen soll, in der dritten Person (er, Tristan). Die Änderungen werden auf diesem Gerät gespeichert.</p>
+    <p class="note">Jedes Thema hat eine Beispielfrage, Stichwörter und eine Antwort. Schreib die Antwort so, wie der Bot sie sagen soll, in der dritten Person (er, Tristan). Die Änderungen werden auf diesem Gerät gespeichert. Zum Aktualisieren der App tippst du auf den Feuerwehrmann.</p>
     <div id="topicList" style="display:flex;flex-direction:column;gap:12px"></div>
     <div class="row">
       <button id="addTopic" type="button">Thema hinzufügen</button>
@@ -782,7 +796,23 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
   });
   $('typedForm').addEventListener('submit',function(e){e.preventDefault();var v=$('typedQ').value;$('typedQ').value='';handleQuestion(v)});
   $('faceExit').addEventListener('click',openSettings);
+  function updateApp(){
+    stopListen();stopClip();typing++;
+    try{if(window.speechSynthesis)window.speechSynthesis.cancel()}catch(e){}
+    bubble.textContent='Aktualisiere …';talk(false);
+    var go=function(){try{if(/github\.io$/.test(location.hostname))location.replace(location.pathname+'?v='+Date.now());else location.reload()}catch(e){location.reload()}};
+    try{
+      var jobs=[];
+      if(window.caches&&caches.keys)jobs.push(caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k)}))}));
+      if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations)jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){return Promise.all(rs.map(function(r){return r.unregister()}))}));
+      Promise.all(jobs).then(go,go);
+      setTimeout(go,1500);
+    }catch(e){go()}
+  }
   (function initFace(){
+    var fs=document.querySelector('.stage svg');
+    fs.setAttribute('aria-label','Feuerwehrmann. Antippen, um die App zu aktualisieren.');
+    fs.addEventListener('click',function(){if(document.body.classList.contains('face')&&!document.body.classList.contains('settings'))updateApp()});
     document.body.classList.add('face');
     bubble.textContent='Servus! Ich bin dein Feuerwehrmann. Frag mich etwas über Tristan.';
     $('hear').textContent='Tippe aufs Mikrofon und stell deine Frage.';
@@ -816,3 +846,8 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
   });
 })();
 </script>
+
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}
+</script>
+</body></html>
