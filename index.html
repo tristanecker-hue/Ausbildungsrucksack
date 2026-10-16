@@ -241,8 +241,10 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
       <button id="addTopic" type="button">Thema hinzufügen</button>
       <button id="resetTopics" type="button" class="ghost">Vorlage laden</button>
       <button id="pdfBtn" type="button" class="ghost">Als PDF sichern</button>
+      <button id="soundBtn" type="button" class="ghost">Ton testen</button>
     </div>
     <p class="note" id="pdfNote"></p>
+    <p class="note" id="soundNote"></p>
     <div class="row"><button id="settingsDone" type="button">Fertig</button></div>
   </section>
 
@@ -410,6 +412,7 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
     var ss=window.speechSynthesis;
     if(!ss||typeof SpeechSynthesisUtterance==='undefined')return;
     try{
+      audioSession('playback');
       stopClip();
       ss.cancel();
       var tok=++speakTok;
@@ -435,7 +438,19 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
   }catch(e){}
   var clip=null,unlocked=false,player=new Audio();
   var SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+  var blobs={};
+  function blobUrl(key){
+    if(blobs[key])return blobs[key];
+    var bin=atob(window.VOICE[key]),u=new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+    return blobs[key]=URL.createObjectURL(new Blob([u],{type:'audio/mpeg'}));
+  }
+  function audioSession(t){try{if(navigator.audioSession)navigator.audioSession.type=t}catch(e){}}
+  function reportAudio(e){
+    try{$('hear').textContent='Ton blockiert'+(e&&e.name?' ('+e.name+')':'')+'. Tippe aufs Mikrofon oder auf «Ton testen» in den Einstellungen.'}catch(x){}
+  }
   function unlockAudio(){
+    audioSession('playback');
     if(unlocked)return;unlocked=true;
     try{player.src=SILENT;var pp=player.play();if(pp&&pp.catch)pp.catch(function(){unlocked=false})}catch(e){unlocked=false}
     try{if(window.speechSynthesis&&typeof SpeechSynthesisUtterance!=='undefined'){var u=new SpeechSynthesisUtterance(' ');u.volume=0;window.speechSynthesis.speak(u)}}catch(e){}
@@ -447,13 +462,14 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
   function playClip(key,text){
     stopClip();
     try{if(window.speechSynthesis)window.speechSynthesis.cancel()}catch(e){}
-    var a=player;a.src='data:audio/mpeg;base64,'+window.VOICE[key];
+    audioSession('playback');
+    var a=player;a.src=blobUrl(key);
     clip=a;
     a.onplay=function(){if(clip===a){speaking=true;talk(true)}};
     var done=function(){if(clip===a){speaking=false;talk(false)}};
     a.onended=done;a.onerror=done;
     var p=a.play();
-    if(p&&p.catch)p.catch(function(){if(clip===a){clip=null;speak(text)}});
+    if(p&&p.catch)p.catch(function(e){reportAudio(e);if(clip===a){clip=null;speak(text)}});
   }
   function say(text,clipKey){
     return new Promise(function(res){
@@ -831,6 +847,30 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
     for(var i=0;i<out.length;i++)u[i]=out.charCodeAt(i)&255;
     return u;
   }
+  $('soundBtn').addEventListener('click',function(){
+    var n=$('soundNote');n.className='note';
+    unlockAudio();audioSession('playback');
+    var tried='';
+    function viaVoice(why){
+      tried=why;
+      try{
+        var ss=window.speechSynthesis;
+        if(!ss||typeof SpeechSynthesisUtterance==='undefined'){n.className='note err';n.textContent='Kein Ton möglich ('+why+'). Prüfe den Stumm-Schalter und die Lautstärke.';return}
+        ss.cancel();var u=new SpeechSynthesisUtterance('Hallo, hier ist der Feuerwehrmann.');u.lang='de-DE';
+        u.onstart=function(){n.textContent='Die Aufnahme von Lars ging nicht ('+why+'). Die Browser-Stimme läuft. Hörst du sie?'};
+        u.onerror=function(){n.className='note err';n.textContent='Kein Ton möglich ('+why+'). Prüfe den Stumm-Schalter und die Lautstärke.'};
+        ss.speak(u);
+      }catch(e){n.className='note err';n.textContent='Kein Ton möglich.'}
+    }
+    try{
+      stopClip();
+      player.onplay=null;player.onended=null;player.onerror=null;
+      player.src=blobUrl('unknown');
+      var p=player.play();
+      n.textContent='Test läuft …';
+      if(p&&p.then)p.then(function(){n.textContent='Ton gestartet. Du solltest «Dazu hat Tristan noch nichts verraten» hören. Wenn nicht: Stumm-Schalter, Lautstärke und Bluetooth prüfen.'}).catch(function(e){viaVoice(e&&e.name||'Fehler')});
+    }catch(e){viaVoice(e&&e.name||'Fehler')}
+  });
   $('pdfBtn').addEventListener('click',async function(){
     var note=$('pdfNote');note.className='note';note.textContent='';
     var name='Ausbildungsrucksack-Fragen-Antworten.pdf';
@@ -863,7 +903,7 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
     speaking=false;talk(false);
     var r=new SR(),got='';
     rec=r;r.lang='de-CH';r.interimResults=true;r.continuous=false;r.maxAlternatives=1;
-    r.onstart=function(){autoTry=false;listening=true;setHearing(true);$('micBtn').classList.add('on');$('hear').textContent='Ich höre zu …'};
+    r.onstart=function(){audioSession('play-and-record');autoTry=false;listening=true;setHearing(true);$('micBtn').classList.add('on');$('hear').textContent='Ich höre zu …'};
     r.onresult=function(e){
       var s='';for(var k=0;k<e.results.length;k++)s+=e.results[k][0].transcript;
       got=s;$('hear').textContent='«'+s+'»';document.body.classList.add('nodding');
@@ -876,7 +916,7 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
       $('hear').textContent=m;got='';
     };
     r.onend=function(){
-      listening=false;rec=null;setHearing(false);$('micBtn').classList.remove('on');$('micBtn').disabled=busy;
+      audioSession('playback');listening=false;rec=null;setHearing(false);$('micBtn').classList.remove('on');$('micBtn').disabled=busy;
       if(got.trim())handleQuestion(got);
       else if(auto&&!fatal)setTimeout(loopListen,350);
     };
