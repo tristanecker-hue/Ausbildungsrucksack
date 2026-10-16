@@ -417,14 +417,21 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
       window.speechSynthesis.addEventListener('voiceschanged',loadVoices);
     }
   }catch(e){}
-  var clip=null;
+  var clip=null,unlocked=false,player=new Audio();
+  var SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+  function unlockAudio(){
+    if(unlocked)return;unlocked=true;
+    try{player.src=SILENT;var pp=player.play();if(pp&&pp.catch)pp.catch(function(){unlocked=false})}catch(e){unlocked=false}
+    try{if(window.speechSynthesis&&typeof SpeechSynthesisUtterance!=='undefined'){var u=new SpeechSynthesisUtterance(' ');u.volume=0;window.speechSynthesis.speak(u)}}catch(e){}
+  }
+  ['pointerdown','touchend','click','keydown'].forEach(function(ev){document.addEventListener(ev,unlockAudio,true)});
   function stopClip(){
     if(clip){try{clip.pause()}catch(e){}clip=null}
   }
   function playClip(key,text){
     stopClip();
     try{if(window.speechSynthesis)window.speechSynthesis.cancel()}catch(e){}
-    var a=new Audio('data:audio/mpeg;base64,'+window.VOICE[key]);
+    var a=player;a.src='data:audio/mpeg;base64,'+window.VOICE[key];
     clip=a;
     a.onplay=function(){if(clip===a){speaking=true;talk(true)}};
     var done=function(){if(clip===a){speaking=false;talk(false)}};
