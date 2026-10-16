@@ -240,7 +240,9 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
     <div class="row">
       <button id="addTopic" type="button">Thema hinzufügen</button>
       <button id="resetTopics" type="button" class="ghost">Vorlage laden</button>
+      <button id="pdfBtn" type="button" class="ghost">Als PDF sichern</button>
     </div>
+    <p class="note" id="pdfNote"></p>
     <div class="row"><button id="settingsDone" type="button">Fertig</button></div>
   </section>
 
@@ -757,6 +759,96 @@ body.face #facePanel{display:flex;flex-direction:column;align-items:center;gap:1
     resetArm=0;b.textContent='Vorlage laden';T=cloneDef();saveTopics();renderSettings();
   });
   $('settingsDone').addEventListener('click',closeSettings);
+  /* PDF-Export ohne Bibliothek */
+  var CP={8211:0x96,8212:0x97,8216:0x91,8217:0x92,8220:0x93,8221:0x94,8222:0x84,8230:0x85,8226:0x95,8364:0x80};
+  function enc(s){
+    var o='';
+    for(var i=0;i<s.length;i++){
+      var c=s.charCodeAt(i),b;
+      if(c===92||c===40||c===41){o+='\\'+String.fromCharCode(c);continue}
+      if(c<32)b=32;else if(c<128||(c>=160&&c<256))b=c;else b=CP[c]||63;
+      o+=String.fromCharCode(b);
+    }
+    return o;
+  }
+  function buildPdf(){
+    var W=595,H=842,M=56,BW=W-2*M;
+    var ctx=document.createElement('canvas').getContext('2d');
+    function width(txt,font,size){
+      ctx.font=(font==='F2'?'bold ':font==='F3'?'italic ':'')+size+'px Helvetica, Arial, sans-serif';
+      return ctx.measureText(txt).width;
+    }
+    function wrap(txt,font,size){
+      var out=[];
+      String(txt).split(/\n/).forEach(function(par){
+        var words=par.split(/\s+/).filter(Boolean),line='';
+        if(!words.length){out.push('');return}
+        words.forEach(function(w){
+          var t=line?line+' '+w:w;
+          if(width(t,font,size)<=BW||!line)line=t;else{out.push(line);line=w}
+        });
+        out.push(line);
+      });
+      return out;
+    }
+    var pages=[[]],y=H-M;
+    function put(txt,font,size,gap){
+      var lead=size*1.4;
+      if(y-gap-lead<M){pages.push([]);y=H-M;gap=0}
+      y-=gap+lead;
+      pages[pages.length-1].push('BT /'+font+' '+size+' Tf '+M+' '+y.toFixed(1)+' Td ('+enc(txt)+') Tj ET');
+    }
+    put('Fragen und Antworten','F2',22,0);
+    put('Mein Ausbildungsrucksack · Stand '+new Date().toLocaleDateString('de-CH'),'F1',10,2);
+    T.forEach(function(t,i){
+      wrap((i+1)+'. '+(t.title||'Ohne Titel'),'F2',14).forEach(function(l,k){put(l,'F2',14,k?0:22)});
+      if(t.q.trim())wrap('Frage: '+t.q,'F3',10).forEach(function(l,k){put(l,'F3',10,k?0:4)});
+      var a=t.a.trim()||'(noch keine Antwort)';
+      wrap(a,'F1',11).forEach(function(l,k){put(l,'F1',11,k?0:6)});
+    });
+    var objs=[],n=0;
+    function add(s){objs.push(s);return ++n}
+    var cat=add(''),pgs=add('');
+    var f1=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    var f2=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    var f3=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>');
+    var kids=[];
+    pages.forEach(function(lines){
+      var cs=lines.join('\n');
+      var c=add('<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream');
+      var pg=add('<< /Type /Page /Parent '+pgs+' 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 '+f1+' 0 R /F2 '+f2+' 0 R /F3 '+f3+' 0 R >> >> /Contents '+c+' 0 R >>');
+      kids.push(pg+' 0 R');
+    });
+    objs[cat-1]='<< /Type /Catalog /Pages '+pgs+' 0 R >>';
+    objs[pgs-1]='<< /Type /Pages /Kids ['+kids.join(' ')+'] /Count '+kids.length+' >>';
+    var out='%PDF-1.4\n',offs=[];
+    objs.forEach(function(o,i){offs.push(out.length);out+=(i+1)+' 0 obj\n'+o+'\nendobj\n'});
+    var xr=out.length;
+    out+='xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';
+    offs.forEach(function(o){out+=('0000000000'+o).slice(-10)+' 00000 n \n'});
+    out+='trailer\n<< /Size '+(objs.length+1)+' /Root '+cat+' 0 R >>\nstartxref\n'+xr+'\n%%EOF';
+    var u=new Uint8Array(out.length);
+    for(var i=0;i<out.length;i++)u[i]=out.charCodeAt(i)&255;
+    return u;
+  }
+  $('pdfBtn').addEventListener('click',async function(){
+    var note=$('pdfNote');note.className='note';note.textContent='';
+    var name='Ausbildungsrucksack-Fragen-Antworten.pdf';
+    try{
+      var blob=new Blob([buildPdf()],{type:'application/pdf'});
+      var dl=null;
+      try{dl=window.claude&&window.claude.use?await window.claude.use('downloads'):null}catch(e){dl=null}
+      if(dl){await dl.save({filename:name,data:blob});note.textContent='PDF bereit.';return}
+      var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+      document.body.appendChild(a);a.click();
+      setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},4000);
+      note.textContent='PDF erstellt. Öffnet es sich nicht, schau im Ordner «Downloads» oder in den Dateien.';
+    }catch(e){
+      if(e&&e.code==='declined')return;
+      note.className='note err';note.textContent='PDF konnte nicht erstellt werden.';
+    }
+  });
+
   function stopListen(){
     if(rec){try{rec.abort()}catch(e){}rec=null}
     listening=false;auto=false;setHearing(false);
